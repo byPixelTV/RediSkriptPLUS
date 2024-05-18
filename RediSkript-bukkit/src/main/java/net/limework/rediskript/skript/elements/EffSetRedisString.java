@@ -13,7 +13,7 @@ import org.bukkit.event.Event;
 public class EffSetRedisString extends Effect {
 
     static {
-        Skript.registerEffect(EffSetRedisListValue.class, "set redis string %string% to %string%");
+        Skript.registerEffect(EffSetRedisString.class, "set redis string %string% to %string%");
     }
 
 

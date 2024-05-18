@@ -404,6 +404,26 @@ public class RedisController extends BinaryJedisPubSub implements Runnable {
         }
     }
 
+    public void setString(String key, String value) {
+        try (Jedis jedis = jedisPool.getResource()) {
+            jedis.set(key, value);
+        }
+    }
+
+    // Function to get a Redis string
+    public String getString(String key) {
+        try (Jedis jedis = jedisPool.getResource()) {
+            return jedis.get(key);
+        }
+    }
+
+    // Function to delete a Redis string
+    public void deleteString(String key) {
+        try (Jedis jedis = jedisPool.getResource()) {
+            jedis.del(key);
+        }
+    }
+
     public String getHashField(String hashName, String fieldName) {
         try (Jedis jedis = jedisPool.getResource()) {
             return jedis.hget(hashName, fieldName);

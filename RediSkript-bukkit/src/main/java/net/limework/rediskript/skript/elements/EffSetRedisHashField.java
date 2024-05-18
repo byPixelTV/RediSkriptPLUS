@@ -12,7 +12,7 @@ import org.bukkit.event.Event;
 
 public class EffSetRedisHashField extends Effect {
     static {
-        Skript.registerEffect(EffSetRedisHashField.class, "set field %string% to %string% in redis (hash|value) %string%");
+        Skript.registerEffect(EffSetRedisHashField.class, "set [value of] field %string% to %string% in redis (hash|value) %string%");
     }
 
 

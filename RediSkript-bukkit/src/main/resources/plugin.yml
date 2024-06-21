@@ -1,8 +1,7 @@
 main: net.limework.rediskript.RediSkript
-name: RediSkript
-version: ${project.version}
-authors: [Govindas, ham1255, DaemonicKing, limework.net]
-contributors: [byPixelTV, Lunanu]
+name: RediSkriptPlus
+version: 1.3.8
+authors: [byPixelTV, Govindas, ham1255, DaemonicKing, limework.net]
 api-version: 1.20
 depend: [Skript]
 commands:

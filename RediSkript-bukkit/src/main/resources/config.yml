@@ -32,6 +32,12 @@ Redis:
   MacKey: "32CHARACTERS KEY"
 
 
+# Enable support for RediVelocity
+# RediVelocity is a Velocity plugin, that is basically a copy of RedisBungee, but modern and for Velocity
+RediVelocity:
+  enabled: false
+  use-json: true
+
 #the channels from which this server can receive messages
 #you can always send messages to all channels!
 #you can add as many channels as you wish!

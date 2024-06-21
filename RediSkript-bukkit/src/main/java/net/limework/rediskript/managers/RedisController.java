@@ -1,14 +1,10 @@
 package net.limework.rediskript.managers;
 
-import ch.njol.skript.registrations.Classes;
-import ch.njol.skript.variables.Variables;
 import net.limework.rediskript.RediSkript;
-import net.limework.rediskript.data.Encryption;
 import net.limework.rediskript.events.RedisMessageEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.Configuration;
 import org.bukkit.scheduler.BukkitTask;
-import org.cryptomator.siv.UnauthenticCiphertextException;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import redis.clients.jedis.BinaryJedisPubSub;
@@ -17,22 +13,15 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
-import javax.crypto.IllegalBlockSizeException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
 
 public class RedisController extends BinaryJedisPubSub implements Runnable {
 
 
     //Jedis Pool to be used by every another class.
     private final JedisPool jedisPool;
-
-    //this seems useless unless tls is OFF!
-
-    // class author is govindas :/
-    private final Encryption encryption;
 
     private byte[][] channelsInByte;
 
@@ -73,9 +62,6 @@ public class RedisController extends BinaryJedisPubSub implements Runnable {
                     config.getBoolean("Redis.useTLS", false));
         }
 
-        encryption = new Encryption(config.getBoolean("Redis.EncryptMessages"),
-                config.getString("Redis.EncryptionKey"),
-                config.getString("Redis.MacKey"));
         setupChannels(config);
         isConnectionBroken = new AtomicBoolean(true);
         isConnecting = new AtomicBoolean(false);
@@ -120,181 +106,63 @@ public class RedisController extends BinaryJedisPubSub implements Runnable {
         String channelString = new String(channel, StandardCharsets.UTF_8);
         String receivedMessage = null;
         try {
-            //if encryption is enabled, decrypt the message, else just convert binary to string
-            if (this.encryption.isEncryptionEnabled()) {
-                try {
-                    receivedMessage = encryption.decrypt(message);
-                } catch (UnauthenticCiphertextException | IllegalBlockSizeException e) {
-                    e.printStackTrace();
+            receivedMessage = new String(message, StandardCharsets.UTF_8);
+            // check if the msg starts with "{" and ends with "}"
+            if (!receivedMessage.startsWith("{") || !receivedMessage.endsWith("}")) {
+                RedisMessageEvent event;
+                event = new RedisMessageEvent(channelString, receivedMessage, System.currentTimeMillis());
+                if (plugin.isEnabled()) {
+                    RedisMessageEvent finalEvent = event;
+                    Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
                 }
-
             } else {
-                //encryption is disabled, so let's just get the string
-                receivedMessage = new String(message, StandardCharsets.UTF_8);
-            }
-            if (receivedMessage != null) {
                 JSONObject j = new JSONObject(receivedMessage);
-                //  +
-                //  +++ RedisBungee events, added by Lunanu (Discord: @lunanu) +++
-                if (j.get("action").equals("SERVER_CHANGE")) {
-                    String messages = j.getString("target");
-                    Long date = System.currentTimeMillis();
-                    RedisMessageEvent event;
-                    event = new RedisMessageEvent(channelString, "redisbungee:SERVER_CHANGE;" + messages.toString(), date);
-                    //if plugin is disabling, don't call events anymore
-                    if (plugin.isEnabled()) {
-                        RedisMessageEvent finalEvent = event;
-                        Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
-                    }
-                } else if (j.get("action").equals("JOIN")) {
-                    String messages = j.getString("target");
-                    Long date = System.currentTimeMillis();
-                    RedisMessageEvent event;
-                    event = new RedisMessageEvent(channelString, "redisbungee:JOIN;" + messages.toString(), date);
-                    //if plugin is disabling, don't call events anymore
-                    if (plugin.isEnabled()) {
-                        RedisMessageEvent finalEvent = event;
-                        Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
-                    }
-                } else if (j.get("action").equals("LEAVE")) {
-                    String messages = j.getString("target");
-                    Long date = System.currentTimeMillis();
-                    RedisMessageEvent event;
-                    event = new RedisMessageEvent(channelString, "redisbungee:LEAVE;" + messages.toString(), date);
-                    //if plugin is disabling, don't call events anymore
-                    if (plugin.isEnabled()) {
-                        RedisMessageEvent finalEvent = event;
-                        Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
-                    }
-                //  --- RedisBungee events, added by Lunanu (Discord: @lunanu) ---
-                //  -
-                } else if (j.get("action").equals("Skript")) {
-                    JSONArray messages = j.getJSONArray("Messages");
-                    RedisMessageEvent event;
-                    for (int i = 0; i < messages.length(); i++) {
-                        event = new RedisMessageEvent(channelString, messages.get(i).toString(), j.getLong("Date"));
+
+                if (plugin.getConfig().getBoolean("RediVelocity.enabled")) {
+                    if (j.get("event").equals("serverSwitch")) {
+                        String messages = j.getString("target");
+                        Long date = System.currentTimeMillis();
+                        RedisMessageEvent event;
+                        event = new RedisMessageEvent(channelString, "redisbungee:SERVER_CHANGE;" + messages, date);
+                        event = new RedisMessageEvent(channelString, "redivelocity:serverSwitch;" + messages, date);
+                        //if plugin is disabling, don't call events anymore
+                        if (plugin.isEnabled()) {
+                            RedisMessageEvent finalEvent = event;
+                            Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
+                        }
+                    } else if (j.get("action").equals("postLogin")) {
+                        String messages = j.getString("target");
+                        Long date = System.currentTimeMillis();
+                        RedisMessageEvent event;
+                        event = new RedisMessageEvent(channelString, "redisbungee:JOIN;" + messages, date);
+                        event = new RedisMessageEvent(channelString, "redivelocity:postLogin;" + messages, date);
+                        //if plugin is disabling, don't call events anymore
+                        if (plugin.isEnabled()) {
+                            RedisMessageEvent finalEvent = event;
+                            Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
+                        }
+                    } else if (j.get("action").equals("disconnect")) {
+                        String messages = j.getString("target");
+                        Long date = System.currentTimeMillis();
+                        RedisMessageEvent event;
+                        event = new RedisMessageEvent(channelString, "redisbungee:LEAVE;" + messages, date);
+                        event = new RedisMessageEvent(channelString, "redivelocity:disconnect;" + messages, date);
                         //if plugin is disabling, don't call events anymore
                         if (plugin.isEnabled()) {
                             RedisMessageEvent finalEvent = event;
                             Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
                         }
                     }
-                } else if (j.get("action").equals("SkriptVariables")) {
 
-                    //Transfer variables between servers
-
-                    JSONArray varNames = j.getJSONArray("Names");
-                    Object inputValue;
-                    String changeValue = null;
-                    JSONArray varValues = null;
-                    if (!j.isNull("Values")) {
-                        varValues = j.getJSONArray("Values");
-                    }
-                    for (int i = 0; i < varNames.length(); i++) {
-                        String varName = varNames.get(i).toString();
-                        if (j.isNull("Values")) {
-
-                            // only check for SET here, because null has to be ignored in all other cases
-                            if (j.getString("Operation").equals("SET")) {
-                                Variables.setVariable(varName, null, null, false);
-                            }
-
-                        } else {
-                            if (!varValues.isNull(i)) {
-                                changeValue = varValues.get(i).toString();
-                            }
-                            String[] inputs = changeValue.split("\\^", 2);
-                            inputValue = Classes.deserialize(inputs[0], Base64.getDecoder().decode(inputs[1]));
-                            switch (j.getString("Operation")) {
-                                case "ADD":
-                                    if (varName.charAt(varName.length() - 1) == '*') {
-                                        plugin.getLogger().log(Level.WARNING, "Adding to {::*} variables in RediSkript is not supported. Variable name: " + varName);
-                                        continue;
-                                    }
-                                    Object variable = Variables.getVariable(varName, null, false);
-                                    if (variable == null) {
-                                        Variables.setVariable(varName, inputValue, null, false);
-                                    } else if (variable instanceof Long) {
-                                        if (inputValue instanceof Long) {
-                                            Variables.setVariable(varName, (Long) variable + (Long) inputValue, null, false);
-                                        } else if (inputValue instanceof Double) {
-
-                                            // convert Long variable to Double
-                                            variable = Double.valueOf((Long) variable);
-                                            Variables.setVariable(varName, (Double) variable + (Double) inputValue, null, false);
-                                        } else {
-                                            // Not supported input type
-                                            plugin.getLogger().log(Level.WARNING, "Unsupported add action of data type (" + inputValue.getClass().getName() + ") on variable: " + varName);
-                                            continue;
-                                        }
-                                    } else if (variable instanceof Double) {
-                                        if (inputValue instanceof Double) {
-                                            Variables.setVariable(varName, (Double) variable + (Double) inputValue, null, false);
-                                        } else if (inputValue instanceof Long) {
-                                            Variables.setVariable(varName, (Double) variable + ((Long) inputValue).doubleValue(), null, false);
-                                        } else {
-                                            // Not supported input type
-                                            plugin.getLogger().log(Level.WARNING, "Unsupported add action of data type (" + inputValue.getClass().getName() + ") on variable: " + varName);
-                                            continue;
-                                        }
-                                    } else {
-                                        // Not supported input type
-                                        plugin.getLogger().log(Level.WARNING, "Unsupported variable type in add action (" + variable.getClass().getName() + ") on variable: " + varName);
-                                        continue;
-                                    }
-                                    break;
-                                case "REMOVE":
-                                    if (varName.charAt(varName.length() - 1) == '*') {
-                                        plugin.getLogger().log(Level.WARNING, "Removing from {::*} variables in RediSkript is not supported. Variable name: " + varName);
-                                        continue;
-                                    }
-                                    variable = Variables.getVariable(varName, null, false);
-                                    if (variable == null) {
-                                        if (inputValue instanceof Long) {
-                                            Variables.setVariable(varName, -(Long) inputValue, null, false);
-                                        } else if (inputValue instanceof Double) {
-                                            Variables.setVariable(varName, -(Double) inputValue, null, false);
-                                        } else {
-                                            // Not supported input type
-                                            plugin.getLogger().log(Level.WARNING, "Unsupported remove action of data type (" + inputValue.getClass().getName() + ") on variable: " + varName);
-                                            continue;
-                                        }
-                                    } else if (variable instanceof Long) {
-                                        if (inputValue instanceof Long) {
-                                            Variables.setVariable(varName, (Long) variable - (Long) inputValue, null, false);
-                                        } else if (inputValue instanceof Double) {
-
-                                            // convert Long variable to Double
-                                            variable = Double.valueOf((Long) variable);
-                                            Variables.setVariable(varName, (Double) variable - (Double) inputValue, null, false);
-                                        } else {
-                                            // Not supported input type
-                                            plugin.getLogger().log(Level.WARNING, "Unsupported remove action of data type (" + inputValue.getClass().getName() + ") on variable: " + varName);
-                                            continue;
-                                        }
-                                    } else if (variable instanceof Double) {
-                                        if (inputValue instanceof Double) {
-                                            Variables.setVariable(varName, (Double) variable - (Double) inputValue, null, false);
-                                        } else if (inputValue instanceof Long) {
-                                            Variables.setVariable(varName, (Double) variable - ((Long) inputValue).doubleValue(), null, false);
-                                        }
-                                    } else {
-                                        // Not supported input type
-                                        plugin.getLogger().log(Level.WARNING, "Unsupported variable type in remove action (" + variable.getClass().getName() + ") on variable: " + varName);
-                                        continue;
-                                    }
-                                    break;
-                                case "SET":
-
-                                    //this is needed, because setting a {variable::*} causes weird behavior, like
-                                    //1st set operation is no data, 2nd has data, etc.
-                                    //if you set it to null before action, it works correctly
-                                    if (varName.charAt(varName.length() - 1) == '*') {
-                                        Variables.setVariable(varName, null, null, false);
-                                    }
-                                    Variables.setVariable(varNames.get(i).toString(), inputValue, null, false);
-                                    break;
-
+                    if (j.get("action").equals("Skript")) {
+                        JSONArray messages = j.getJSONArray("Messages");
+                        RedisMessageEvent event;
+                        for (int i = 0; i < messages.length(); i++) {
+                            event = new RedisMessageEvent(channelString, messages.get(i).toString(), j.getLong("Date"));
+                            //if plugin is disabling, don't call events anymore
+                            if (plugin.isEnabled()) {
+                                RedisMessageEvent finalEvent = event;
+                                Bukkit.getScheduler().runTask(plugin, () -> plugin.getServer().getPluginManager().callEvent(finalEvent));
                             }
                         }
                     }
@@ -312,19 +180,6 @@ public class RedisController extends BinaryJedisPubSub implements Runnable {
         json.put("Messages", new JSONArray(message));
         json.put("action", "Skript");
         json.put("Date", System.currentTimeMillis()); //for unique string every time & PING calculations
-        finishSendMessage(json, channel);
-    }
-
-    public void sendVariables(String[] variableNames, String[] variableValues, String channel, String operation) {
-        JSONObject json = new JSONObject();
-        json.put("Names", new JSONArray(variableNames));
-        if (variableValues != null) {
-            json.put("Values", new JSONArray(variableValues));
-        }
-
-        json.put("action", "SkriptVariables");
-        json.put("Date", System.currentTimeMillis()); //for unique string every time & PING calculations
-        json.put("Operation", operation);
         finishSendMessage(json, channel);
     }
 
@@ -468,11 +323,7 @@ public class RedisController extends BinaryJedisPubSub implements Runnable {
     public void finishSendMessage(JSONObject json, String channel) {
         try {
             byte[] message;
-            if (encryption.isEncryptionEnabled()) {
-                message = encryption.encrypt(json.toString());
-            } else {
-                message = json.toString().getBytes(StandardCharsets.UTF_8);
-            }
+            message = json.toString().getBytes(StandardCharsets.UTF_8);
 
             //sending a redis message blocks main thread if there's no more connections available
             //so to avoid issues, it's best to do it always on separate thread
